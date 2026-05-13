@@ -46,11 +46,21 @@
 <body class="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen flex flex-col font-sans">
 
     <!-- Loading Fallback -->
-    <div id="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white dark:bg-gray-900">
+    <div id="loading" class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gray-900 text-white transition-opacity duration-500">
         <div class="spinner mb-4"></div>
-        <h2 class="text-xl font-bold">Eko is waking up...</h2>
-        <p id="loading-text" class="text-gray-500 mt-2 text-sm">Initializing System</p>
+        <h2 class="text-xl font-bold">Starting Eko...</h2>
+        <p class="text-gray-500 mt-2 text-sm">Force-Starting System</p>
     </div>
+
+    <!-- 🔥 FORCE-START ENGINE (Will never get stuck now) 🔥 -->
+    <script>
+        setTimeout(function() {
+            var loader = document.getElementById('loading');
+            var app = document.getElementById('app');
+            if(loader) loader.style.display = 'none';
+            if(app) app.classList.remove('hidden');
+        }, 1500); // 1.5 seconds max load time
+    </script>
 
     <!-- Main App Container -->
     <div id="app" class="flex-1 flex w-full relative min-h-screen hidden">
@@ -142,10 +152,8 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
     </div>
 
     <script>
-        // Global State
+        // Global State & Recovery
         let STATE = {};
-
-        // Auto-Recovery State Loader
         try {
             STATE = {
                 chats: JSON.parse(localStorage.getItem('eko_chats')) || [],
@@ -159,24 +167,16 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                 },
                 isGenerating: false
             };
-            
-            // Fix missing settings from older versions (Crucial Fix)
-            if (typeof STATE.settings.voiceEnabled === 'undefined') {
-                STATE.settings.voiceEnabled = true;
-            }
+            if (typeof STATE.settings.voiceEnabled === 'undefined') STATE.settings.voiceEnabled = true;
         } catch (e) {
-            console.error("Local Storage Error:", e);
-            localStorage.removeItem('eko_settings'); // Clear corrupted settings
-            location.reload(); // Reload fresh
+            localStorage.removeItem('eko_settings'); 
         }
 
         const els = {};
 
         function init() {
             try {
-                // Populate DOM Elements dynamically
                 els.app = document.getElementById('app'); 
-                els.loading = document.getElementById('loading');
                 els.sidebar = document.getElementById('sidebar'); 
                 els.sidebarOverlay = document.getElementById('sidebar-overlay');
                 els.chatContainer = document.getElementById('chat-container'); 
@@ -201,18 +201,11 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                 applyTheme();
                 applyVoiceUI();
                 
-                // Safe Speech Synthesis check
-                if ('speechSynthesis' in window) {
-                    try { window.speechSynthesis.getVoices(); } catch(e) {}
-                }
+                if ('speechSynthesis' in window) { try { window.speechSynthesis.getVoices(); } catch(e) {} }
 
-                marked.setOptions({
-                    highlight: function(code, lang) {
-                        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                        return hljs.highlight(code, { language }).value;
-                    },
-                    breaks: true
-                });
+                if(window.marked) {
+                    marked.setOptions({ highlight: function(code, lang) { return window.hljs && hljs.getLanguage(lang) ? hljs.highlight(code, { language: lang }).value : code; }, breaks: true });
+                }
 
                 els.chatInput.addEventListener('input', function() {
                     this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';
@@ -234,7 +227,7 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                 els.btnToggleSidebar.addEventListener('click', toggleSidebar);
                 els.sidebarOverlay.addEventListener('click', toggleSidebar);
                 els.btnNewChat.addEventListener('click', createNewChat);
-                els.btnVoiceToggle.addEventListener('click', toggleVoice); 
+                if(els.btnVoiceToggle) els.btnVoiceToggle.addEventListener('click', toggleVoice); 
 
                 els.inputApiKey.value = STATE.settings.apiKey; els.inputModel.value = STATE.settings.model; els.inputSystem.value = STATE.settings.systemPrompt;
                 els.currentModelDisplay.textContent = STATE.settings.model.split('/').pop();
@@ -242,18 +235,10 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                 renderChatList();
                 if (STATE.chats.length > 0) loadChat(STATE.chats[0].id); else els.welcomeScreen.classList.remove('hidden');
 
+                if (!STATE.settings.apiKey) openModal(els.settingsModal);
+
             } catch (error) {
                 console.error("Initialization failed:", error);
-                document.getElementById('loading-text').innerText = "Recovery Mode...";
-                // In worst case, clear everything so user isn't stuck forever
-                setTimeout(() => { localStorage.clear(); location.reload(); }, 2000);
-            } finally {
-                // ALWAYS HIDE LOADER - BULLETPROOF
-                setTimeout(() => {
-                    if(els.loading) els.loading.classList.add('hidden'); 
-                    if(els.app) els.app.classList.remove('hidden');
-                    if (STATE.settings && !STATE.settings.apiKey) openModal(els.settingsModal);
-                }, 800);
             }
         }
 
@@ -273,25 +258,14 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             }
         }
 
-        function toggleVoice() {
-            STATE.settings.voiceEnabled = !STATE.settings.voiceEnabled;
-            applyVoiceUI();
-            saveState();
-        }
+        function toggleVoice() { STATE.settings.voiceEnabled = !STATE.settings.voiceEnabled; applyVoiceUI(); saveState(); }
 
         function speakAIResponse(text) {
             if (!STATE.settings.voiceEnabled || !('speechSynthesis' in window)) return;
-
             window.speechSynthesis.cancel(); 
 
-            let cleanText = text
-                .replace(/!\[.*?\]\(.*?\)/g, '') 
-                .replace(/\[.*?\]\(.*?\)/g, '')  
-                .replace(/```[\s\S]*?
-```/g, 'Yahan maine code generate kiya hai.') 
-                .replace(/[*#_`~]/g, '') 
-                .trim();
-
+            let cleanText = text.replace(/!\[.*?\]\(.*?\)/g, '').replace(/\[.*?\]\(.*?\)/g, '').replace(/```[\s\S]*?
+```/g, 'Code block diya hai.').replace(/[*#_`~]/g, '').trim();
             if (!cleanText) return;
 
             const utterance = new SpeechSynthesisUtterance(cleanText);
@@ -299,14 +273,10 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             const preferredVoice = voices.find(v => v.lang.includes('hi-IN') || v.lang.includes('en-IN'));
             if (preferredVoice) utterance.voice = preferredVoice;
 
-            utterance.rate = 1.0; 
-            utterance.pitch = 1.0;
+            utterance.rate = 1.0; utterance.pitch = 1.0;
             window.speechSynthesis.speak(utterance);
         }
 
-        // ==========================================
-        // UI & CHAT LOGIC
-        // ==========================================
         function applyTheme() {
             const html = document.documentElement; const icon = els.btnTheme.querySelector('i');
             if (STATE.settings.darkMode) { html.classList.add('dark'); icon.classList.replace('fa-moon', 'fa-sun'); } 
@@ -384,8 +354,8 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             let safeContent = content;
             if(!isUser) {
                 const fixedContent = fixImageMarkdown(content);
-                const rawHtml = marked.parse(fixedContent);
-                safeContent = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['class', 'target'] });
+                const rawHtml = window.marked ? marked.parse(fixedContent) : fixedContent;
+                safeContent = window.DOMPurify ? DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['class', 'target'] }) : rawHtml;
             }
 
             msgDiv.innerHTML = `
@@ -444,7 +414,8 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                                 const data = JSON.parse(trimmed.slice(6));
                                 if (data.choices && data.choices[0].delta.content) {
                                     aiFullText += data.choices[0].delta.content;
-                                    aiContentContainer.innerHTML = DOMPurify.sanitize(marked.parse(fixImageMarkdown(aiFullText))) + '<span class="cursor-blink"></span>';
+                                    aiContentContainer.innerHTML = window.DOMPurify ? DOMPurify.sanitize(marked.parse(fixImageMarkdown(aiFullText))) : fixImageMarkdown(aiFullText);
+                                    aiContentContainer.innerHTML += '<span class="cursor-blink"></span>';
                                     scrollToBottom();
                                 }
                             } catch (e) {}
@@ -452,16 +423,17 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                     }
                 }
             } catch (error) {
-                aiFullText = `**Error:** ${error.message}`; aiContentContainer.innerHTML = DOMPurify.sanitize(marked.parse(aiFullText));
+                aiFullText = `**Error:** ${error.message}`; 
+                aiContentContainer.innerHTML = window.DOMPurify ? DOMPurify.sanitize(marked.parse(aiFullText)) : aiFullText;
             } finally {
                 STATE.isGenerating = false; els.btnSend.disabled = false; els.btnSend.innerHTML = '<i class="fas fa-paper-plane"></i>';
-                aiContentContainer.innerHTML = DOMPurify.sanitize(marked.parse(fixImageMarkdown(aiFullText)), { ADD_ATTR: ['class', 'target'] });
+                aiContentContainer.innerHTML = window.DOMPurify ? DOMPurify.sanitize(marked.parse(fixImageMarkdown(aiFullText)), { ADD_ATTR: ['class', 'target'] }) : fixImageMarkdown(aiFullText);
                 chat.messages.push({ role: 'assistant', content: aiFullText }); saveState(); scrollToBottom();
                 speakAIResponse(aiFullText);
             }
         }
 
-        document.addEventListener('DOMContentLoaded', init);
+        window.addEventListener('load', init);
     </script>
 </body>
 </html>
