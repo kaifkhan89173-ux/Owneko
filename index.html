@@ -49,6 +49,7 @@
     <div id="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white dark:bg-gray-900">
         <div class="spinner mb-4"></div>
         <h2 class="text-xl font-bold">Eko is waking up...</h2>
+        <p id="loading-text" class="text-gray-500 mt-2 text-sm">Initializing System</p>
     </div>
 
     <!-- Main App Container -->
@@ -141,87 +142,126 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
     </div>
 
     <script>
-        const STATE = {
-            chats: JSON.parse(localStorage.getItem('eko_chats')) || [],
-            currentChatId: null,
-            settings: JSON.parse(localStorage.getItem('eko_settings')) || {
-                apiKey: '',
-                model: 'openai/gpt-oss-120b:free', 
-                systemPrompt: 'You are Eko, an ultra-smart, friendly AI assistant. Act like a supportive "bro". Mirror the user language (Hindi/Hinglish/English). CRITICAL IMAGE RULE: If the user asks to generate an image or logo, silently output: ![Generated Image](https://image.pollinations.ai/prompt/YOUR-DETAILED-PROMPT) Replace YOUR-DETAILED-PROMPT with detailed English keywords ONLY.',
-                darkMode: true,
-                voiceEnabled: true // VOICE STATE
-            },
-            isGenerating: false
-        };
+        // Global State
+        let STATE = {};
 
-        const els = {
-            app: document.getElementById('app'), loading: document.getElementById('loading'),
-            sidebar: document.getElementById('sidebar'), sidebarOverlay: document.getElementById('sidebar-overlay'),
-            chatContainer: document.getElementById('chat-container'), chatList: document.getElementById('chat-list'),
-            chatForm: document.getElementById('chat-form'), chatInput: document.getElementById('chat-input'),
-            btnSend: document.getElementById('btn-send'), btnToggleSidebar: document.getElementById('btn-toggle-sidebar'),
-            btnNewChat: document.getElementById('btn-new-chat'), btnTheme: document.getElementById('btn-theme'),
-            btnSettings: document.getElementById('btn-settings'), welcomeScreen: document.getElementById('welcome-screen'),
-            settingsModal: document.getElementById('settings-modal'), inputApiKey: document.getElementById('input-api-key'),
-            inputModel: document.getElementById('input-model'), inputSystem: document.getElementById('input-system'),
-            btnSaveSettings: document.getElementById('btn-save-settings'), closeModalBtns: document.querySelectorAll('.close-modal'),
-            currentModelDisplay: document.getElementById('current-model-display'),
-            btnVoiceToggle: document.getElementById('btn-voice-toggle') // VOICE BTN
-        };
+        // Auto-Recovery State Loader
+        try {
+            STATE = {
+                chats: JSON.parse(localStorage.getItem('eko_chats')) || [],
+                currentChatId: null,
+                settings: JSON.parse(localStorage.getItem('eko_settings')) || {
+                    apiKey: '',
+                    model: 'openai/gpt-oss-120b:free', 
+                    systemPrompt: 'You are Eko, an ultra-smart, friendly AI assistant. Act like a supportive "bro". Mirror the user language (Hindi/Hinglish/English). CRITICAL IMAGE RULE: If the user asks to generate an image or logo, silently output: ![Generated Image](https://image.pollinations.ai/prompt/YOUR-DETAILED-PROMPT) Replace YOUR-DETAILED-PROMPT with detailed English keywords ONLY.',
+                    darkMode: true,
+                    voiceEnabled: true
+                },
+                isGenerating: false
+            };
+            
+            // Fix missing settings from older versions (Crucial Fix)
+            if (typeof STATE.settings.voiceEnabled === 'undefined') {
+                STATE.settings.voiceEnabled = true;
+            }
+        } catch (e) {
+            console.error("Local Storage Error:", e);
+            localStorage.removeItem('eko_settings'); // Clear corrupted settings
+            location.reload(); // Reload fresh
+        }
+
+        const els = {};
 
         function init() {
-            applyTheme();
-            applyVoiceUI();
-            
-            // Pre-load voices to avoid delay on first speech
-            window.speechSynthesis.getVoices(); 
+            try {
+                // Populate DOM Elements dynamically
+                els.app = document.getElementById('app'); 
+                els.loading = document.getElementById('loading');
+                els.sidebar = document.getElementById('sidebar'); 
+                els.sidebarOverlay = document.getElementById('sidebar-overlay');
+                els.chatContainer = document.getElementById('chat-container'); 
+                els.chatList = document.getElementById('chat-list');
+                els.chatForm = document.getElementById('chat-form'); 
+                els.chatInput = document.getElementById('chat-input');
+                els.btnSend = document.getElementById('btn-send'); 
+                els.btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
+                els.btnNewChat = document.getElementById('btn-new-chat'); 
+                els.btnTheme = document.getElementById('btn-theme');
+                els.btnSettings = document.getElementById('btn-settings'); 
+                els.welcomeScreen = document.getElementById('welcome-screen');
+                els.settingsModal = document.getElementById('settings-modal'); 
+                els.inputApiKey = document.getElementById('input-api-key');
+                els.inputModel = document.getElementById('input-model'); 
+                els.inputSystem = document.getElementById('input-system');
+                els.btnSaveSettings = document.getElementById('btn-save-settings'); 
+                els.closeModalBtns = document.querySelectorAll('.close-modal');
+                els.currentModelDisplay = document.getElementById('current-model-display');
+                els.btnVoiceToggle = document.getElementById('btn-voice-toggle');
 
-            marked.setOptions({
-                highlight: function(code, lang) {
-                    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                    return hljs.highlight(code, { language }).value;
-                },
-                breaks: true
-            });
-
-            els.chatInput.addEventListener('input', function() {
-                this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';
-                if(this.value === '') this.style.height = 'auto';
-            });
-
-            els.chatInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (!STATE.isGenerating && els.chatInput.value.trim() !== '') els.chatForm.dispatchEvent(new Event('submit'));
+                applyTheme();
+                applyVoiceUI();
+                
+                // Safe Speech Synthesis check
+                if ('speechSynthesis' in window) {
+                    try { window.speechSynthesis.getVoices(); } catch(e) {}
                 }
-            });
 
-            els.chatForm.addEventListener('submit', handleSend);
-            els.btnSettings.addEventListener('click', () => openModal(els.settingsModal));
-            els.closeModalBtns.forEach(btn => btn.addEventListener('click', () => closeModal(els.settingsModal)));
-            els.btnSaveSettings.addEventListener('click', saveSettings);
-            els.btnTheme.addEventListener('click', toggleTheme);
-            els.btnToggleSidebar.addEventListener('click', toggleSidebar);
-            els.sidebarOverlay.addEventListener('click', toggleSidebar);
-            els.btnNewChat.addEventListener('click', createNewChat);
-            els.btnVoiceToggle.addEventListener('click', toggleVoice); // VOICE EVENT
+                marked.setOptions({
+                    highlight: function(code, lang) {
+                        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                        return hljs.highlight(code, { language }).value;
+                    },
+                    breaks: true
+                });
 
-            els.inputApiKey.value = STATE.settings.apiKey; els.inputModel.value = STATE.settings.model; els.inputSystem.value = STATE.settings.systemPrompt;
-            els.currentModelDisplay.textContent = STATE.settings.model.split('/').pop();
+                els.chatInput.addEventListener('input', function() {
+                    this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';
+                    if(this.value === '') this.style.height = 'auto';
+                });
 
-            renderChatList();
-            if (STATE.chats.length > 0) loadChat(STATE.chats[0].id); else els.welcomeScreen.classList.remove('hidden');
+                els.chatInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (!STATE.isGenerating && els.chatInput.value.trim() !== '') els.chatForm.dispatchEvent(new Event('submit'));
+                    }
+                });
 
-            setTimeout(() => {
-                els.loading.classList.add('hidden'); els.app.classList.remove('hidden');
-                if (!STATE.settings.apiKey) openModal(els.settingsModal);
-            }, 800);
+                els.chatForm.addEventListener('submit', handleSend);
+                els.btnSettings.addEventListener('click', () => openModal(els.settingsModal));
+                els.closeModalBtns.forEach(btn => btn.addEventListener('click', () => closeModal(els.settingsModal)));
+                els.btnSaveSettings.addEventListener('click', saveSettings);
+                els.btnTheme.addEventListener('click', toggleTheme);
+                els.btnToggleSidebar.addEventListener('click', toggleSidebar);
+                els.sidebarOverlay.addEventListener('click', toggleSidebar);
+                els.btnNewChat.addEventListener('click', createNewChat);
+                els.btnVoiceToggle.addEventListener('click', toggleVoice); 
+
+                els.inputApiKey.value = STATE.settings.apiKey; els.inputModel.value = STATE.settings.model; els.inputSystem.value = STATE.settings.systemPrompt;
+                els.currentModelDisplay.textContent = STATE.settings.model.split('/').pop();
+
+                renderChatList();
+                if (STATE.chats.length > 0) loadChat(STATE.chats[0].id); else els.welcomeScreen.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Initialization failed:", error);
+                document.getElementById('loading-text').innerText = "Recovery Mode...";
+                // In worst case, clear everything so user isn't stuck forever
+                setTimeout(() => { localStorage.clear(); location.reload(); }, 2000);
+            } finally {
+                // ALWAYS HIDE LOADER - BULLETPROOF
+                setTimeout(() => {
+                    if(els.loading) els.loading.classList.add('hidden'); 
+                    if(els.app) els.app.classList.remove('hidden');
+                    if (STATE.settings && !STATE.settings.apiKey) openModal(els.settingsModal);
+                }, 800);
+            }
         }
 
         // ==========================================
         // TEXT-TO-SPEECH (VOICE) ENGINE
         // ==========================================
         function applyVoiceUI() {
+            if(!els.btnVoiceToggle) return;
             const icon = els.btnVoiceToggle.querySelector('i');
             if(STATE.settings.voiceEnabled) {
                 icon.classList.replace('fa-volume-mute', 'fa-volume-up');
@@ -229,7 +269,7 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             } else {
                 icon.classList.replace('fa-volume-up', 'fa-volume-mute');
                 icon.classList.remove('text-blue-500');
-                window.speechSynthesis.cancel(); // Stop talking if muted
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel(); 
             }
         }
 
@@ -240,35 +280,33 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
         }
 
         function speakAIResponse(text) {
-            if (!STATE.settings.voiceEnabled || !window.speechSynthesis) return;
+            if (!STATE.settings.voiceEnabled || !('speechSynthesis' in window)) return;
 
-            window.speechSynthesis.cancel(); // Stop previous speech
+            window.speechSynthesis.cancel(); 
 
-            // Clean text (remove markdown images, code blocks, bold/italics)
             let cleanText = text
-                .replace(/!\[.*?\]\(.*?\)/g, '') // Remove images
-                .replace(/\[.*?\]\(.*?\)/g, '')  // Remove links
+                .replace(/!\[.*?\]\(.*?\)/g, '') 
+                .replace(/\[.*?\]\(.*?\)/g, '')  
                 .replace(/```[\s\S]*?
-```/g, 'Yahan maine code generate kiya hai.') // Replace code blocks
-                .replace(/[*#_`~]/g, '') // Remove asterisks and markdown symbols
+```/g, 'Yahan maine code generate kiya hai.') 
+                .replace(/[*#_`~]/g, '') 
                 .trim();
 
             if (!cleanText) return;
 
             const utterance = new SpeechSynthesisUtterance(cleanText);
-            
-            // Try to set Indian English or Hindi Voice for "Bro" feel
             const voices = window.speechSynthesis.getVoices();
             const preferredVoice = voices.find(v => v.lang.includes('hi-IN') || v.lang.includes('en-IN'));
             if (preferredVoice) utterance.voice = preferredVoice;
 
-            utterance.rate = 1.0; // Speed
+            utterance.rate = 1.0; 
             utterance.pitch = 1.0;
-
             window.speechSynthesis.speak(utterance);
         }
-        // ==========================================
 
+        // ==========================================
+        // UI & CHAT LOGIC
+        // ==========================================
         function applyTheme() {
             const html = document.documentElement; const icon = els.btnTheme.querySelector('i');
             if (STATE.settings.darkMode) { html.classList.add('dark'); icon.classList.replace('fa-moon', 'fa-sun'); } 
@@ -292,14 +330,14 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
         function saveState() { localStorage.setItem('eko_chats', JSON.stringify(STATE.chats)); localStorage.setItem('eko_settings', JSON.stringify(STATE.settings)); }
 
         function createNewChat() {
-            window.speechSynthesis.cancel(); // Stop talking on new chat
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
             const newChat = { id: Date.now().toString(), title: 'New Chat', messages: [] };
             STATE.chats.unshift(newChat); STATE.currentChatId = newChat.id; saveState(); renderChatList(); renderChatWindow();
             if(window.innerWidth < 768) toggleSidebar();
         }
 
         function loadChat(id) {
-            window.speechSynthesis.cancel(); // Stop talking on switch chat
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel(); 
             STATE.currentChatId = id; renderChatList(); renderChatWindow();
             if(window.innerWidth < 768 && !els.sidebar.classList.contains('-translate-x-full')) toggleSidebar();
         }
@@ -368,7 +406,7 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             if (!STATE.settings.apiKey) { alert("Please add your OpenRouter API Key in Settings first."); openModal(els.settingsModal); return; }
             const text = els.chatInput.value.trim(); if (!text || STATE.isGenerating) return;
             
-            window.speechSynthesis.cancel(); // Stop talking if user sends a new message
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel(); 
 
             if (!STATE.currentChatId) createNewChat();
             const chat = STATE.chats.find(c => c.id === STATE.currentChatId);
@@ -419,8 +457,6 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                 STATE.isGenerating = false; els.btnSend.disabled = false; els.btnSend.innerHTML = '<i class="fas fa-paper-plane"></i>';
                 aiContentContainer.innerHTML = DOMPurify.sanitize(marked.parse(fixImageMarkdown(aiFullText)), { ADD_ATTR: ['class', 'target'] });
                 chat.messages.push({ role: 'assistant', content: aiFullText }); saveState(); scrollToBottom();
-                
-                // BOOM! Yahan Eko bolega apna response 👇
                 speakAIResponse(aiFullText);
             }
         }
