@@ -144,8 +144,8 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             currentChatId: null,
             settings: JSON.parse(localStorage.getItem('eko_settings')) || {
                 apiKey: '',
-                model: 'openai/gpt-oss-120b:free', // Default changed for you
-                systemPrompt: 'You are Eko. CRITICAL IMAGE RULE: If user asks for an image, silently generate it using: ![Generated Image](https://image.pollinations.ai/prompt/YOUR_PROMPT) Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.',
+                model: 'openai/gpt-oss-120b:free', 
+                systemPrompt: 'You are Eko, an ultra-smart, friendly AI assistant. Act like a supportive "bro". Mirror the user language (Hindi/Hinglish/English). CRITICAL IMAGE RULE: If the user asks to generate an image or logo, silently output: ![Generated Image](https://image.pollinations.ai/prompt/YOUR-DETAILED-PROMPT) Replace YOUR-DETAILED-PROMPT with detailed English keywords ONLY.',
                 darkMode: true
             },
             isGenerating: false
@@ -268,12 +268,18 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             scrollToBottom();
         }
 
-        // AUTO-FIXER FUNCTION: Fixes AI's broken image URLs
+        // ==========================================
+        // BULLETPROOF AUTO-FIXER FUNCTION (NEW FIX)
+        // ==========================================
         function fixImageMarkdown(text) {
-            return text.replace(/!\[.*?\]\((https:\/\/image\.pollinations\.ai\/prompt\/[^)]+)\)/g, function(match, url) {
-                let cleanUrl = url.replace(/ /g, '%20'); // Space ko theek karega
-                cleanUrl += cleanUrl.includes('?') ? '&nologo=true' : '?nologo=true'; // Watermark hatayega
-                return `![Generated Image](${cleanUrl})`;
+            return text.replace(/!\[.*?\]\((https:\/\/image\.pollinations\.ai\/prompt\/)([^)]+)\)/g, function(match, baseUrl, promptText) {
+                // Remove extra params if AI added them
+                let cleanPrompt = promptText.split('?')[0]; 
+                
+                // encodeURIComponent automatically safely encodes spaces, Hindi, Urdu, special chars, etc.
+                let safeEncodedPrompt = encodeURIComponent(cleanPrompt.trim());
+                
+                return `![Generated Image](${baseUrl}${safeEncodedPrompt}?nologo=true)`;
             });
         }
 
@@ -343,7 +349,6 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                                 const data = JSON.parse(trimmed.slice(6));
                                 if (data.choices && data.choices[0].delta.content) {
                                     aiFullText += data.choices[0].delta.content;
-                                    // Live rendering with auto-fixer
                                     aiContentContainer.innerHTML = DOMPurify.sanitize(marked.parse(fixImageMarkdown(aiFullText))) + '<span class="cursor-blink"></span>';
                                     scrollToBottom();
                                 }
