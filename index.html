@@ -88,7 +88,13 @@
                     </button>
                     <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-purple-500">Eko</h1>
                 </div>
-                <div id="current-model-display" class="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded"></div>
+                <div class="flex items-center gap-3">
+                    <!-- VOICE TOGGLE BUTTON -->
+                    <button id="btn-voice-toggle" class="text-gray-600 dark:text-gray-300 hover:text-blue-500 transition-colors p-2 rounded-lg" title="Toggle Voice">
+                        <i class="fas fa-volume-up text-lg"></i>
+                    </button>
+                    <div id="current-model-display" class="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded hidden md:block"></div>
+                </div>
             </header>
 
             <div id="chat-container" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 pb-32 scroll-smooth">
@@ -128,10 +134,7 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-1">System Prompt</label>
-                    <textarea id="input-system" rows="4" class="w-full bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 outline-none text-xs font-mono">You are Eko. 
-CRITICAL IMAGE RULE: If user asks for an image, silently generate it using:
-![Generated Image](https://image.pollinations.ai/prompt/YOUR_PROMPT)
-Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.</textarea>
+                    <textarea id="input-system" rows="4" class="w-full bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 outline-none text-xs font-mono">You are Eko, an ultra-smart, friendly AI assistant. Act like a supportive "bro" and a highly capable AI assistant. Mirror the user language (Hindi/Hinglish/English). CRITICAL IMAGE RULE: If the user asks to generate an image or logo, silently output: ![Generated Image](https://image.pollinations.ai/prompt/YOUR-DETAILED-PROMPT) Replace YOUR-DETAILED-PROMPT with detailed English keywords ONLY.</textarea>
                 </div>
                 <button id="btn-save-settings" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg mt-2">Save Settings</button>
             </div>
@@ -139,14 +142,21 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
     </div>
 
     <script>
+        // Check for missing voiceEnabled setting and fix it
+        let savedSettings = JSON.parse(localStorage.getItem('eko_settings')) || {};
+        if (typeof savedSettings.voiceEnabled === 'undefined') {
+            savedSettings.voiceEnabled = true; // Default to true
+        }
+
         const STATE = {
             chats: JSON.parse(localStorage.getItem('eko_chats')) || [],
             currentChatId: null,
-            settings: JSON.parse(localStorage.getItem('eko_settings')) || {
-                apiKey: '',
-                model: 'openai/gpt-oss-120b:free', 
-                systemPrompt: 'You are Eko, an ultra-smart, friendly AI assistant. Act like a supportive "bro". Mirror the user language (Hindi/Hinglish/English). CRITICAL IMAGE RULE: If the user asks to generate an image or logo, silently output: ![Generated Image](https://image.pollinations.ai/prompt/YOUR-DETAILED-PROMPT) Replace YOUR-DETAILED-PROMPT with detailed English keywords ONLY.',
-                darkMode: true
+            settings: {
+                apiKey: savedSettings.apiKey || '',
+                model: savedSettings.model || 'openai/gpt-oss-120b:free', 
+                systemPrompt: savedSettings.systemPrompt || 'You are Eko, an ultra-smart, friendly AI assistant. Act like a supportive "bro" and a highly capable AI assistant. Mirror the user language (Hindi/Hinglish/English). CRITICAL IMAGE RULE: If the user asks to generate an image or logo, silently output: ![Generated Image](https://image.pollinations.ai/prompt/YOUR-DETAILED-PROMPT) Replace YOUR-DETAILED-PROMPT with detailed English keywords ONLY.',
+                darkMode: typeof savedSettings.darkMode !== 'undefined' ? savedSettings.darkMode : true,
+                voiceEnabled: savedSettings.voiceEnabled
             },
             isGenerating: false
         };
@@ -162,11 +172,19 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             settingsModal: document.getElementById('settings-modal'), inputApiKey: document.getElementById('input-api-key'),
             inputModel: document.getElementById('input-model'), inputSystem: document.getElementById('input-system'),
             btnSaveSettings: document.getElementById('btn-save-settings'), closeModalBtns: document.querySelectorAll('.close-modal'),
-            currentModelDisplay: document.getElementById('current-model-display')
+            currentModelDisplay: document.getElementById('current-model-display'),
+            btnVoiceToggle: document.getElementById('btn-voice-toggle') // VOICE BTN
         };
 
         function init() {
             applyTheme();
+            applyVoiceUI();
+            
+            // Pre-load voices for mobile
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.getVoices();
+            }
+
             marked.setOptions({
                 highlight: function(code, lang) {
                     const language = hljs.getLanguage(lang) ? lang : 'plaintext';
@@ -195,6 +213,7 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             els.btnToggleSidebar.addEventListener('click', toggleSidebar);
             els.sidebarOverlay.addEventListener('click', toggleSidebar);
             els.btnNewChat.addEventListener('click', createNewChat);
+            els.btnVoiceToggle.addEventListener('click', toggleVoice); // VOICE EVENT
 
             els.inputApiKey.value = STATE.settings.apiKey; els.inputModel.value = STATE.settings.model; els.inputSystem.value = STATE.settings.systemPrompt;
             els.currentModelDisplay.textContent = STATE.settings.model.split('/').pop();
@@ -207,6 +226,57 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                 if (!STATE.settings.apiKey) openModal(els.settingsModal);
             }, 800);
         }
+
+        // ==========================================
+        // TEXT-TO-SPEECH (VOICE) ENGINE
+        // ==========================================
+        function applyVoiceUI() {
+            if(!els.btnVoiceToggle) return;
+            const icon = els.btnVoiceToggle.querySelector('i');
+            if(STATE.settings.voiceEnabled) {
+                icon.classList.replace('fa-volume-mute', 'fa-volume-up');
+                icon.classList.add('text-blue-500');
+            } else {
+                icon.classList.replace('fa-volume-up', 'fa-volume-mute');
+                icon.classList.remove('text-blue-500');
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel(); 
+            }
+        }
+
+        function toggleVoice() {
+            STATE.settings.voiceEnabled = !STATE.settings.voiceEnabled;
+            applyVoiceUI();
+            saveState();
+        }
+
+        function speakAIResponse(text) {
+            if (!STATE.settings.voiceEnabled || !('speechSynthesis' in window)) return;
+
+            window.speechSynthesis.cancel(); 
+
+            let cleanText = text
+                .replace(/!\[.*?\]\(.*?\)/g, '') 
+                .replace(/\[.*?\]\(.*?\)/g, '')  
+                .replace(/```[\s\S]*?
+```/g, 'Code block diya hai bro.') 
+                .replace(/[*#_`~]/g, '') 
+                .trim();
+
+            if (!cleanText) return;
+
+            const utterance = new SpeechSynthesisUtterance(cleanText);
+            const voices = window.speechSynthesis.getVoices();
+            const preferredVoice = voices.find(v => v.lang.includes('hi-IN') || v.lang.includes('en-IN'));
+            if (preferredVoice) utterance.voice = preferredVoice;
+
+            utterance.rate = 1.0; 
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // ==========================================
+        // UI & THEME
+        // ==========================================
 
         function applyTheme() {
             const html = document.documentElement; const icon = els.btnTheme.querySelector('i');
@@ -231,12 +301,14 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
         function saveState() { localStorage.setItem('eko_chats', JSON.stringify(STATE.chats)); localStorage.setItem('eko_settings', JSON.stringify(STATE.settings)); }
 
         function createNewChat() {
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
             const newChat = { id: Date.now().toString(), title: 'New Chat', messages: [] };
             STATE.chats.unshift(newChat); STATE.currentChatId = newChat.id; saveState(); renderChatList(); renderChatWindow();
             if(window.innerWidth < 768) toggleSidebar();
         }
 
         function loadChat(id) {
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
             STATE.currentChatId = id; renderChatList(); renderChatWindow();
             if(window.innerWidth < 768 && !els.sidebar.classList.contains('-translate-x-full')) toggleSidebar();
         }
@@ -273,12 +345,8 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
         // ==========================================
         function fixImageMarkdown(text) {
             return text.replace(/!\[.*?\]\((https:\/\/image\.pollinations\.ai\/prompt\/)([^)]+)\)/g, function(match, baseUrl, promptText) {
-                // Remove extra params if AI added them
                 let cleanPrompt = promptText.split('?')[0]; 
-                
-                // encodeURIComponent automatically safely encodes spaces, Hindi, Urdu, special chars, etc.
                 let safeEncodedPrompt = encodeURIComponent(cleanPrompt.trim());
-                
                 return `![Generated Image](${baseUrl}${safeEncodedPrompt}?nologo=true)`;
             });
         }
@@ -289,7 +357,6 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             
             let safeContent = content;
             if(!isUser) {
-                // Apply our Magic Auto-Fixer before rendering
                 const fixedContent = fixImageMarkdown(content);
                 const rawHtml = marked.parse(fixedContent);
                 safeContent = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['class', 'target'] });
@@ -312,6 +379,8 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
             e.preventDefault();
             if (!STATE.settings.apiKey) { alert("Please add your OpenRouter API Key in Settings first."); openModal(els.settingsModal); return; }
             const text = els.chatInput.value.trim(); if (!text || STATE.isGenerating) return;
+
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel(); 
 
             if (!STATE.currentChatId) createNewChat();
             const chat = STATE.chats.find(c => c.id === STATE.currentChatId);
@@ -362,6 +431,7 @@ Replace YOUR_PROMPT with highly detailed English keywords separated by hyphens.<
                 STATE.isGenerating = false; els.btnSend.disabled = false; els.btnSend.innerHTML = '<i class="fas fa-paper-plane"></i>';
                 aiContentContainer.innerHTML = DOMPurify.sanitize(marked.parse(fixImageMarkdown(aiFullText)), { ADD_ATTR: ['class', 'target'] });
                 chat.messages.push({ role: 'assistant', content: aiFullText }); saveState(); scrollToBottom();
+                speakAIResponse(aiFullText); // SPEAK HERE
             }
         }
 
