@@ -227,55 +227,9 @@
             }, 800);
         }
 
-        // ==========================================
-        // TEXT-TO-SPEECH (VOICE) ENGINE
-        // ==========================================
-        function applyVoiceUI() {
-            if(!els.btnVoiceToggle) return;
-            const icon = els.btnVoiceToggle.querySelector('i');
-            if(STATE.settings.voiceEnabled) {
-                icon.classList.replace('fa-volume-mute', 'fa-volume-up');
-                icon.classList.add('text-blue-500');
-            } else {
-                icon.classList.replace('fa-volume-up', 'fa-volume-mute');
-                icon.classList.remove('text-blue-500');
-                if ('speechSynthesis' in window) window.speechSynthesis.cancel(); 
-            }
-        }
+        
 
-        function toggleVoice() {
-            STATE.settings.voiceEnabled = !STATE.settings.voiceEnabled;
-            applyVoiceUI();
-            saveState();
-        }
-
-        function speakAIResponse(text) {
-            if (!STATE.settings.voiceEnabled || !('speechSynthesis' in window)) return;
-
-            window.speechSynthesis.cancel(); 
-
-            let cleanText = text
-                .replace(/!\[.*?\]\(.*?\)/g, '') 
-                .replace(/\[.*?\]\(.*?\)/g, '')  
-                .replace(/```[\s\S]*?
-```/g, 'Code block diya hai bro.') 
-                .replace(/[*#_`~]/g, '') 
-                .trim();
-
-            if (!cleanText) return;
-
-            const utterance = new SpeechSynthesisUtterance(cleanText);
-            const voices = window.speechSynthesis.getVoices();
-            const preferredVoice = voices.find(v => v.lang.includes('hi-IN') || v.lang.includes('en-IN'));
-            if (preferredVoice) utterance.voice = preferredVoice;
-
-            utterance.rate = 1.0; 
-            utterance.pitch = 1.0;
-            window.speechSynthesis.speak(utterance);
-        }
-
-        // ==========================================
-        // UI & THEME
+        /  // UI & THEME
         // ==========================================
 
         function applyTheme() {
