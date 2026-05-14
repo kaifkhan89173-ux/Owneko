@@ -56,6 +56,16 @@
         <h2 class="text-xl font-bold">Eko is waking up...</h2>
     </div>
 
+    <!-- 🔥 THE ZIDDI FAILSAFE: Forces loading to hide after 1.5 seconds NO MATTER WHAT 🔥 -->
+    <script>
+        setTimeout(function() {
+            var loader = document.getElementById('loading');
+            var app = document.getElementById('app');
+            if (loader) loader.classList.add('hidden');
+            if (app) app.classList.remove('hidden');
+        }, 1500);
+    </script>
+
     <!-- Main App Container -->
     <div id="app" class="flex-1 flex w-full relative min-h-screen hidden">
         
@@ -143,21 +153,29 @@
     </div>
 
     <script>
-        const STATE = {
-            chats: JSON.parse(localStorage.getItem('eko_chats')) || [],
-            currentChatId: null,
-            settings: JSON.parse(localStorage.getItem('eko_settings')) || {
-                apiKey: '',
-                model: 'openai/gpt-oss-120b:free', 
-                systemPrompt: 'You are Eko, an ultra-smart, friendly AI assistant. Act like a supportive "bro" and a highly capable AI assistant. Mirror the user language (Hindi/Hinglish/English). CRITICAL IMAGE RULE: If the user asks to generate an image or logo, silently output: ![Generated Image](https://image.pollinations.ai/prompt/YOUR-DETAILED-PROMPT) Replace YOUR-DETAILED-PROMPT with detailed English keywords ONLY.',
-                darkMode: true
-            },
-            isGenerating: false
-        };
+        // Use a Try-Catch block so if anything fails, the app still loads
+        let STATE = {};
+        try {
+            let savedSettings = JSON.parse(localStorage.getItem('eko_settings')) || {};
+            if (typeof savedSettings.voiceEnabled === 'undefined') {
+                savedSettings.voiceEnabled = true;
+            }
 
-        // SAFE VOICE PATCH: Ensures no crash if setting doesn't exist
-        if (typeof STATE.settings.voiceEnabled === 'undefined') {
-            STATE.settings.voiceEnabled = true;
+            STATE = {
+                chats: JSON.parse(localStorage.getItem('eko_chats')) || [],
+                currentChatId: null,
+                settings: {
+                    apiKey: savedSettings.apiKey || '',
+                    model: savedSettings.model || 'openai/gpt-oss-120b:free', 
+                    systemPrompt: savedSettings.systemPrompt || 'You are Eko, an ultra-smart, friendly AI assistant. Act like a supportive "bro" and a highly capable AI assistant. Mirror the user language (Hindi/Hinglish/English). CRITICAL IMAGE RULE: If the user asks to generate an image or logo, silently output: ![Generated Image](https://image.pollinations.ai/prompt/YOUR-DETAILED-PROMPT) Replace YOUR-DETAILED-PROMPT with detailed English keywords ONLY.',
+                    darkMode: typeof savedSettings.darkMode !== 'undefined' ? savedSettings.darkMode : true,
+                    voiceEnabled: savedSettings.voiceEnabled
+                },
+                isGenerating: false
+            };
+        } catch (e) {
+            console.error("Storage Error, resetting state.");
+            STATE = { chats: [], currentChatId: null, settings: { apiKey: '', model: 'openai/gpt-oss-120b:free', systemPrompt: '', darkMode: true, voiceEnabled: true }, isGenerating: false };
         }
 
         const els = {
@@ -172,10 +190,9 @@
             inputModel: document.getElementById('input-model'), inputSystem: document.getElementById('input-system'),
             btnSaveSettings: document.getElementById('btn-save-settings'), closeModalBtns: document.querySelectorAll('.close-modal'),
             currentModelDisplay: document.getElementById('current-model-display'),
-            btnVoiceToggle: document.getElementById('btn-voice-toggle') // Added Voice Button
+            btnVoiceToggle: document.getElementById('btn-voice-toggle')
         };
 
-        // VOICE FUNCTIONS
         function applyVoiceUI() {
             if (!els.btnVoiceToggle) return;
             const icon = els.btnVoiceToggle.querySelector('i');
@@ -213,53 +230,59 @@
         }
 
         function init() {
-            applyTheme();
-            applyVoiceUI(); // Init Voice UI
-            els.btnVoiceToggle.addEventListener('click', toggleVoice); // Voice Listener
-            
-            if ('speechSynthesis' in window) {
-                try { window.speechSynthesis.getVoices(); } catch(e) {}
-            }
-
-            marked.setOptions({
-                highlight: function(code, lang) {
-                    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                    return hljs.highlight(code, { language }).value;
-                },
-                breaks: true
-            });
-
-            els.chatInput.addEventListener('input', function() {
-                this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';
-                if(this.value === '') this.style.height = 'auto';
-            });
-
-            els.chatInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (!STATE.isGenerating && els.chatInput.value.trim() !== '') els.chatForm.dispatchEvent(new Event('submit'));
+            try {
+                applyTheme();
+                applyVoiceUI(); 
+                if (els.btnVoiceToggle) els.btnVoiceToggle.addEventListener('click', toggleVoice); 
+                
+                if ('speechSynthesis' in window) {
+                    try { window.speechSynthesis.getVoices(); } catch(e) {}
                 }
-            });
 
-            els.chatForm.addEventListener('submit', handleSend);
-            els.btnSettings.addEventListener('click', () => openModal(els.settingsModal));
-            els.closeModalBtns.forEach(btn => btn.addEventListener('click', () => closeModal(els.settingsModal)));
-            els.btnSaveSettings.addEventListener('click', saveSettings);
-            els.btnTheme.addEventListener('click', toggleTheme);
-            els.btnToggleSidebar.addEventListener('click', toggleSidebar);
-            els.sidebarOverlay.addEventListener('click', toggleSidebar);
-            els.btnNewChat.addEventListener('click', createNewChat);
+                if (typeof marked !== 'undefined') {
+                    marked.setOptions({
+                        highlight: function(code, lang) {
+                            const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                            return hljs.highlight(code, { language }).value;
+                        },
+                        breaks: true
+                    });
+                }
 
-            els.inputApiKey.value = STATE.settings.apiKey; els.inputModel.value = STATE.settings.model; els.inputSystem.value = STATE.settings.systemPrompt;
-            els.currentModelDisplay.textContent = STATE.settings.model.split('/').pop();
+                els.chatInput.addEventListener('input', function() {
+                    this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';
+                    if(this.value === '') this.style.height = 'auto';
+                });
 
-            renderChatList();
-            if (STATE.chats.length > 0) loadChat(STATE.chats[0].id); else els.welcomeScreen.classList.remove('hidden');
+                els.chatInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (!STATE.isGenerating && els.chatInput.value.trim() !== '') els.chatForm.dispatchEvent(new Event('submit'));
+                    }
+                });
 
-            setTimeout(() => {
-                els.loading.classList.add('hidden'); els.app.classList.remove('hidden');
-                if (!STATE.settings.apiKey) openModal(els.settingsModal);
-            }, 800);
+                els.chatForm.addEventListener('submit', handleSend);
+                els.btnSettings.addEventListener('click', () => openModal(els.settingsModal));
+                els.closeModalBtns.forEach(btn => btn.addEventListener('click', () => closeModal(els.settingsModal)));
+                els.btnSaveSettings.addEventListener('click', saveSettings);
+                els.btnTheme.addEventListener('click', toggleTheme);
+                els.btnToggleSidebar.addEventListener('click', toggleSidebar);
+                els.sidebarOverlay.addEventListener('click', toggleSidebar);
+                els.btnNewChat.addEventListener('click', createNewChat);
+
+                els.inputApiKey.value = STATE.settings.apiKey; els.inputModel.value = STATE.settings.model; els.inputSystem.value = STATE.settings.systemPrompt;
+                els.currentModelDisplay.textContent = STATE.settings.model.split('/').pop();
+
+                renderChatList();
+                if (STATE.chats.length > 0) loadChat(STATE.chats[0].id); else els.welcomeScreen.classList.remove('hidden');
+
+                setTimeout(() => {
+                    els.loading.classList.add('hidden'); els.app.classList.remove('hidden');
+                    if (!STATE.settings.apiKey) openModal(els.settingsModal);
+                }, 800);
+            } catch (initError) {
+                console.error("Error during init:", initError);
+            }
         }
 
         function applyTheme() {
@@ -324,17 +347,10 @@
             scrollToBottom();
         }
 
-        // ==========================================
-        // BULLETPROOF AUTO-FIXER FUNCTION (NEW FIX)
-        // ==========================================
         function fixImageMarkdown(text) {
             return text.replace(/!\[.*?\]\((https:\/\/image\.pollinations\.ai\/prompt\/)([^)]+)\)/g, function(match, baseUrl, promptText) {
-                // Remove extra params if AI added them
                 let cleanPrompt = promptText.split('?')[0]; 
-                
-                // encodeURIComponent automatically safely encodes spaces, Hindi, Urdu, special chars, etc.
                 let safeEncodedPrompt = encodeURIComponent(cleanPrompt.trim());
-                
                 return `![Generated Image](${baseUrl}${safeEncodedPrompt}?nologo=true)`;
             });
         }
@@ -345,10 +361,9 @@
             
             let safeContent = content;
             if(!isUser) {
-                // Apply our Magic Auto-Fixer before rendering
                 const fixedContent = fixImageMarkdown(content);
-                const rawHtml = marked.parse(fixedContent);
-                safeContent = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['class', 'target'] });
+                const rawHtml = (typeof marked !== 'undefined') ? marked.parse(fixedContent) : fixedContent;
+                safeContent = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['class', 'target'] }) : rawHtml;
             }
 
             msgDiv.innerHTML = `
@@ -407,7 +422,12 @@
                                 const data = JSON.parse(trimmed.slice(6));
                                 if (data.choices && data.choices[0].delta.content) {
                                     aiFullText += data.choices[0].delta.content;
-                                    aiContentContainer.innerHTML = DOMPurify.sanitize(marked.parse(fixImageMarkdown(aiFullText))) + '<span class="cursor-blink"></span>';
+                                    
+                                    // Progressive Render
+                                    const fixedContent = fixImageMarkdown(aiFullText);
+                                    const rawHtml = (typeof marked !== 'undefined') ? marked.parse(fixedContent) : fixedContent;
+                                    aiContentContainer.innerHTML = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(rawHtml) : rawHtml;
+                                    aiContentContainer.innerHTML += '<span class="cursor-blink"></span>';
                                     scrollToBottom();
                                 }
                             } catch (e) {}
@@ -415,10 +435,15 @@
                     }
                 }
             } catch (error) {
-                aiFullText = `**Error:** ${error.message}`; aiContentContainer.innerHTML = DOMPurify.sanitize(marked.parse(aiFullText));
+                aiFullText = `**Error:** ${error.message}`; 
+                aiContentContainer.innerHTML = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(aiFullText) : aiFullText;
             } finally {
                 STATE.isGenerating = false; els.btnSend.disabled = false; els.btnSend.innerHTML = '<i class="fas fa-paper-plane"></i>';
-                aiContentContainer.innerHTML = DOMPurify.sanitize(marked.parse(fixImageMarkdown(aiFullText)), { ADD_ATTR: ['class', 'target'] });
+                
+                const finalFixedContent = fixImageMarkdown(aiFullText);
+                const finalRawHtml = (typeof marked !== 'undefined') ? marked.parse(finalFixedContent) : finalFixedContent;
+                aiContentContainer.innerHTML = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(finalRawHtml, { ADD_ATTR: ['class', 'target'] }) : finalRawHtml;
+                
                 chat.messages.push({ role: 'assistant', content: aiFullText }); saveState(); scrollToBottom();
                 speakAIResponse(aiFullText); // SPEAK HERE
             }
